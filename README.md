@@ -1,0 +1,1 @@
+This project is about training a BERT-like model by randomly masking tokens and trying to predict them in an encoder based architecture
