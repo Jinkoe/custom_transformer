@@ -3,7 +3,6 @@ tokenizer/*
 !tokenizer/sentencepiece_trainer.py
 
 trained_models/*
-!trained_models/placeholder.txt
 
 runs/*
 

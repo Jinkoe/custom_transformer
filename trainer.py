@@ -43,7 +43,7 @@ class Trainer:
     def train(self,
               n_warmup_steps: int,
               n_training_steps: int,
-              save_model_name: str,
+              model_save_name: str,
               learning_rate: float,
               weight_decay: float,
               clipping_value: float):
@@ -160,7 +160,7 @@ class Trainer:
                                               global_step=step)
 
             if step % 20000 == 0:
-                self.save_model(dir_path=save_model_name, step=step)
+                self.save_model(model_save_name=model_save_name, step=step)
 
         tensorboard_writer.close()
 
@@ -174,11 +174,13 @@ class Trainer:
 
         return accuracy_all_text_tokens, accuracy_masked_tokens
 
-    def save_model(self, dir_path: str, step: int):
-        if not os.path.exists(f"trained_models/{dir_path}"):
-            os.mkdir(f"trained_models/{dir_path}")
+    def save_model(self, model_save_name: str, step: int):
+        if not os.path.exists("trained_models"):
+            os.mkdir("trained_models")
+        if not os.path.exists(f"trained_models/{model_save_name}"):
+            os.mkdir(f"trained_models/{model_save_name}")
 
-        torch.save(self.model, f"trained_models/{dir_path}/{step}.pt")
+        torch.save(self.model, f"trained_models/{model_save_name}/{step}.pt")
 
     @staticmethod
     def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, last_epoch=-1):
@@ -267,7 +269,7 @@ def main():
 
     trainer.train(n_warmup_steps=n_warmup_steps,
                   n_training_steps=n_training_steps,
-                  save_model_name=model_name,
+                  model_save_name=model_name,
                   weight_decay=weight_decay,
                   learning_rate=learning_rate,
                   clipping_value=clipping_value)
