@@ -9,6 +9,8 @@ runs/*
 
 training_data/data/*
 
+.idea/*
+
 
 # General python gitignore
 __pycache__
