@@ -17,13 +17,25 @@ class Trainer:
                  source_data_path: str,
                  batch_size: int,
                  max_input_size: int,
-                 vocab_size: int):
-        self.batch_size = batch_size
+                 vocab_size: int,
+                 n_warmup_steps: int,
+                 n_training_steps: int,
+                 learning_rate: float,
+                 weight_decay: float,
+                 clipping_value: float
+                 ):
         self.model = model
+        self.device = device
+        self.batch_size = batch_size
+        self.n_warmup_steps = n_warmup_steps
+        self.n_training_steps = n_training_steps
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        self.clipping_value = clipping_value
+
         # print("Compiling model for faster training using Torch 2.0...")           # Not yet support for Windows, but on Linux could really speed up training.
         # self.compiled_model = torch.compile(model)
         # print("Model compiled.")
-        self.device = device
         self.preprocessor = Preprocessor(sentence_piece_model_path=sentence_piece_model_path,
                                          max_input_size=max_input_size,
                                          vocab_size=vocab_size)
@@ -40,25 +52,27 @@ class Trainer:
         self.train_dataloader = torch.utils.data.DataLoader(self.train_subset_dataset, batch_size=self.batch_size)
         self.test_dataloader = torch.utils.data.DataLoader(self.test_subset_dataset, batch_size=self.batch_size)
 
-    def train(self,
-              n_warmup_steps: int,
-              n_training_steps: int,
-              model_save_name: str,
-              learning_rate: float,
-              weight_decay: float,
-              clipping_value: float):
+    def train(self, model_save_name: str):
         train_dataloader = iter(self.train_dataloader)
 
         criterion = torch.nn.NLLLoss()
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay,
-                                      eps=1e-6)  # using AdamW instead of Adam because its weight decay implementation is closer to what was used in BERT paper. Epsilon value is from RoBERTa paper
+        # using AdamW instead of Adam because its weight decay implementation is closer to what was used in BERT paper. Epsilon value is from RoBERTa paper
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
+            eps=1e-6)
         # scaler = torch.cuda.amp.GradScaler()
-        scheduler = self.get_linear_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=n_warmup_steps,
-                                                         num_training_steps=n_training_steps)
+        scheduler = self.get_linear_schedule_with_warmup(
+            optimizer=optimizer,
+            num_warmup_steps=self.n_warmup_steps,
+            num_training_steps=self.n_training_steps,
+        )
 
         tensorboard_writer = tensorboard.SummaryWriter()
 
-        for step in range(n_training_steps):
+        # Main training loop
+        for step in range(self.n_training_steps):
             input_sentences = next(train_dataloader)["text"]
 
             input_ids, input_ids_with_mask, input_mask = self.preprocessor.preprocess(input_sentences)
@@ -84,24 +98,25 @@ class Trainer:
                 input_mask=input_mask
             )
 
-            tensorboard_writer.add_scalar(tag="Accuracy/train/masked_tokens",
-                                          scalar_value=train_accuracy_masked_tokens,
-                                          global_step=step)
-            tensorboard_writer.add_scalar(tag="Accuracy/train/all_text_tokens",
-                                          scalar_value=train_accuracy_all_text_tokens,
-                                          global_step=step)
-            tensorboard_writer.add_scalar(tag="Loss/train",
-                                          scalar_value=train_loss,
-                                          global_step=step)
-            tensorboard_writer.add_scalar(tag="Learning Rate",
-                                          scalar_value=scheduler.get_last_lr()[0],
-                                          global_step=step)
+            if step % 10 == 0:
+                tensorboard_writer.add_scalar(tag="Accuracy/train/masked_tokens",
+                                              scalar_value=train_accuracy_masked_tokens,
+                                              global_step=step)
+                tensorboard_writer.add_scalar(tag="Accuracy/train/all_text_tokens",
+                                              scalar_value=train_accuracy_all_text_tokens,
+                                              global_step=step)
+                tensorboard_writer.add_scalar(tag="Loss/train",
+                                              scalar_value=train_loss,
+                                              global_step=step)
+                tensorboard_writer.add_scalar(tag="Learning Rate",
+                                              scalar_value=scheduler.get_last_lr()[0],
+                                              global_step=step)
 
             # scaler.scale(train_loss).backward()
             # scaler.step(optimizer)
             # scaler.update()
             train_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), clipping_value)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clipping_value)
             optimizer.step()
 
             scheduler.step()
@@ -122,7 +137,7 @@ class Trainer:
 
                         softmax_output, _ = self.model(input_ids_with_mask)
 
-                        # We set the label of the non-masked tokens as -100 to not take them into account when computing the loss. Please see torch.nn.NLLLoss documentation.
+                        # We set the label of the non-masked tokens as -100 to not take them into account when computing the loss. For more details check torch.nn.NLLLoss documentation.
                         labels = input_ids.clone()
                         labels[input_mask == 0] = -100
 
@@ -229,7 +244,7 @@ def main():
     h = 12
     max_input_size = 100
 
-    device = "cpu"
+    device = "cuda:0"
     batch_size = 35
     n_warmup_steps = 50000
     n_training_steps = 3000000
@@ -237,27 +252,28 @@ def main():
     learning_rate = 4e-5
     clipping_value = 1
 
-    model_name = f"transformer_w_gradient_clipping_{time.time()}"
-    start_from_checkpoint = None  # f"trained_models/{model_name}/100000.pt"
+    model_type = "pytorch"        # custom or pytorch
+    model_name = f"{model_type}_transformer_w_gradient_clipping_{time.time()}"
 
-    # model = CustomTransformerEncoderModel(device=device,
-    #                                       vocab_size=vocab_size,
-    #                                       n_encoder_layers=n_encoder_layers,
-    #                                       d_model=d_model,
-    #                                       d_ff_hidden=d_ff_hidden,
-    #                                       h=h,
-    #                                       max_input_size=max_input_size)
+    if model_type == "custom":
+        model = CustomTransformerEncoderModel(device=device,
+                                              vocab_size=vocab_size,
+                                              n_encoder_layers=n_encoder_layers,
+                                              d_model=d_model,
+                                              d_ff_hidden=d_ff_hidden,
+                                              h=h,
+                                              max_input_size=max_input_size)
 
-    model = PytorchTransformerEncoderModel(device=device,
-                                           vocab_size=vocab_size,
-                                           n_encoder_layers=n_encoder_layers,
-                                           d_model=d_model,
-                                           d_ff_hidden=d_ff_hidden,
-                                           h=h,
-                                           max_input_size=max_input_size)
-
-    if start_from_checkpoint:
-        model.load_state_dict(torch.load(f"trained_models/{model_name}/{start_from_checkpoint}.pt").state_dict())
+    elif model_type == "pytorch":
+        model = PytorchTransformerEncoderModel(device=device,
+                                               vocab_size=vocab_size,
+                                               n_encoder_layers=n_encoder_layers,
+                                               d_model=d_model,
+                                               d_ff_hidden=d_ff_hidden,
+                                               h=h,
+                                               max_input_size=max_input_size)
+    else:
+        raise NotImplementedError()
 
     trainer = Trainer(model=model,
                       device=device,
@@ -265,14 +281,14 @@ def main():
                       source_data_path="training_data/data/base_data_lowercase.txt",
                       batch_size=batch_size,
                       max_input_size=max_input_size,
-                      vocab_size=vocab_size)
+                      vocab_size=vocab_size,
+                      n_warmup_steps=n_warmup_steps,
+                      n_training_steps=n_training_steps,
+                      weight_decay=weight_decay,
+                      learning_rate=learning_rate,
+                      clipping_value=clipping_value)
 
-    trainer.train(n_warmup_steps=n_warmup_steps,
-                  n_training_steps=n_training_steps,
-                  model_save_name=model_name,
-                  weight_decay=weight_decay,
-                  learning_rate=learning_rate,
-                  clipping_value=clipping_value)
+    trainer.train(model_save_name=model_name)
 
 
 main()
