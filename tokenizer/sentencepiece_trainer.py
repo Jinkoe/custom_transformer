@@ -1,17 +1,10 @@
+from special_tokens_ids import SPECIAL_TOKENS_IDS
 import sentencepiece as spm
 import time
 
 
 class SentencePieceTokenizerTrainer:
-    SPECIAL_TOKENS_IDS = {
-        "<pad>": 0,
-        "<unk>": 1,
-        "<s>": 2,
-        "</s>": 3,
-        "[MASK]": 4,
-        "[CLS]": 5,
-        "[SEP]": 6
-    }
+    SPECIAL_TOKENS_IDS = SPECIAL_TOKENS_IDS
 
     def train_model(self, input_data_path: str, vocab_size: int, n_sentences_to_use: int, model_prefix: str):
         spm.SentencePieceTrainer.train(input=input_data_path,
@@ -43,4 +36,4 @@ def main():
                               n_sentences_to_use=5000000)
 
 
-main()
+# main()

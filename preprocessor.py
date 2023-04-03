@@ -2,11 +2,11 @@ from itertools import repeat, chain, islice
 import sentencepiece as spm
 import torch
 
-from tokenizer.sentencepiece_trainer import SentencePieceTokenizerTrainer
+from special_tokens_ids import SPECIAL_TOKENS_IDS
 
 
 class Preprocessor:
-    SPECIAL_TOKENS_IDS = SentencePieceTokenizerTrainer.SPECIAL_TOKENS_IDS
+    SPECIAL_TOKENS_IDS = SPECIAL_TOKENS_IDS
 
     def __init__(self, sentence_piece_model_path: str, max_input_size: int, vocab_size: int):
         self.max_input_size = max_input_size
