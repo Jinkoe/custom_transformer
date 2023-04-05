@@ -1,4 +1,4 @@
-from special_tokens_ids import SPECIAL_TOKENS_IDS
+from tokenizer.special_tokens_ids import SPECIAL_TOKENS_IDS
 import sentencepiece as spm
 import time
 
@@ -28,9 +28,9 @@ class SentencePieceTokenizerTrainer:
 
 def main():
     spm_tokenizer = SentencePieceTokenizerTrainer()
-    spm_tokenizer.lower_case_data(input_data_path="../training_data/data/base_data.txt",
-                                  output_data_path="../training_data/data/base_data_lowercase.txt")
-    spm_tokenizer.train_model(input_data_path="../training_data/data/base_data_lowercase.txt",
+    spm_tokenizer.lower_case_data(input_data_path="../models/custom_bert/training_data/data/base_data.txt",
+                                  output_data_path="../models/custom_bert/training_data/data/base_data_lowercase.txt")
+    spm_tokenizer.train_model(input_data_path="../models/custom_bert/training_data/data/base_data_lowercase.txt",
                               model_prefix=f"{time.time()}_english_spm_lowercase",
                               vocab_size=30000,
                               n_sentences_to_use=5000000)

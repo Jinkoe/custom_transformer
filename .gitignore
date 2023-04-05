@@ -3,10 +3,11 @@ tokenizer/*
 !tokenizer/sentencepiece_trainer.py
 
 trained_models/*
+models/custom_bert/trained_models/*
 
-runs/*
+models/custom_bert/runs/*
 
-training_data/data/*
+models/custom_bert/training_data/data/*
 
 .idea/*
 

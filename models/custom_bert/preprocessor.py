@@ -2,7 +2,7 @@ from itertools import repeat, chain, islice
 import sentencepiece as spm
 import torch
 
-from special_tokens_ids import SPECIAL_TOKENS_IDS
+from tokenizer.special_tokens_ids import SPECIAL_TOKENS_IDS
 
 
 class Preprocessor:

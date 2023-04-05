@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 
-class PytorchTransformerEncoderModel(nn.Module):
+class TorchBERT(nn.Module):
     def __init__(self, device: str, vocab_size: int, n_encoder_layers, d_model: int, d_ff_hidden: int, h: int, max_input_size: int):
         super().__init__()
         self.d_model = d_model

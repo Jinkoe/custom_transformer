@@ -5,8 +5,9 @@ from datasets import load_dataset
 from torch.utils import tensorboard
 
 from preprocessor import Preprocessor
-from custom_transformer import CustomTransformerEncoderModel
-from pytorch_transformer import PytorchTransformerEncoderModel
+
+from models.custom_bert.custom_bert import CustomBERT
+from models.custom_bert.torch_bert import TorchBERT
 
 
 class Trainer:
@@ -22,7 +23,7 @@ class Trainer:
                  n_training_steps: int,
                  learning_rate: float,
                  weight_decay: float,
-                 clipping_value: float
+                 clipping_value: float or None
                  ):
         self.model = model
         self.device = device
@@ -52,7 +53,7 @@ class Trainer:
         self.train_dataloader = torch.utils.data.DataLoader(self.train_subset_dataset, batch_size=self.batch_size)
         self.test_dataloader = torch.utils.data.DataLoader(self.test_subset_dataset, batch_size=self.batch_size)
 
-    def train(self, model_save_name: str):
+    def train(self, model_save_name: str, actual_step_start: int = 0):
         train_dataloader = iter(self.train_dataloader)
 
         criterion = torch.nn.NLLLoss()
@@ -69,7 +70,7 @@ class Trainer:
             num_training_steps=self.n_training_steps,
         )
 
-        tensorboard_writer = tensorboard.SummaryWriter()
+        tensorboard_writer = tensorboard.SummaryWriter(filename_suffix=model_save_name)
 
         # Main training loop
         for step in range(self.n_training_steps):
@@ -98,25 +99,26 @@ class Trainer:
                 input_mask=input_mask
             )
 
-            if step % 10 == 0:
+            if step % 50 == 0:
                 tensorboard_writer.add_scalar(tag="Accuracy/train/masked_tokens",
                                               scalar_value=train_accuracy_masked_tokens,
-                                              global_step=step)
+                                              global_step=actual_step_start + step)
                 tensorboard_writer.add_scalar(tag="Accuracy/train/all_text_tokens",
                                               scalar_value=train_accuracy_all_text_tokens,
-                                              global_step=step)
+                                              global_step=actual_step_start + step)
                 tensorboard_writer.add_scalar(tag="Loss/train",
                                               scalar_value=train_loss,
-                                              global_step=step)
+                                              global_step=actual_step_start + step)
                 tensorboard_writer.add_scalar(tag="Learning Rate",
                                               scalar_value=scheduler.get_last_lr()[0],
-                                              global_step=step)
+                                              global_step=actual_step_start + step)
 
             # scaler.scale(train_loss).backward()
             # scaler.step(optimizer)
             # scaler.update()
             train_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clipping_value)
+            if self.clipping_value:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clipping_value)
             optimizer.step()
 
             scheduler.step()
@@ -166,16 +168,16 @@ class Trainer:
 
                 tensorboard_writer.add_scalar(tag="Accuracy/test/masked_tokens",
                                               scalar_value=average_test_accuracy_masked_tokens,
-                                              global_step=step)
+                                              global_step=actual_step_start + step)
                 tensorboard_writer.add_scalar(tag="Accuracy/test/all_text_tokens",
                                               scalar_value=average_test_accuracy_all_text_tokens,
-                                              global_step=step)
+                                              global_step=actual_step_start + step)
                 tensorboard_writer.add_scalar(tag="Loss/test",
                                               scalar_value=average_test_loss,
-                                              global_step=step)
+                                              global_step=actual_step_start + step)
 
             if step % 20000 == 0:
-                self.save_model(model_save_name=model_save_name, step=step)
+                self.save_model(model_save_name=model_save_name, step=actual_step_start + step)
 
         tensorboard_writer.close()
 
@@ -190,12 +192,12 @@ class Trainer:
         return accuracy_all_text_tokens, accuracy_masked_tokens
 
     def save_model(self, model_save_name: str, step: int):
-        if not os.path.exists("trained_models"):
-            os.mkdir("trained_models")
-        if not os.path.exists(f"trained_models/{model_save_name}"):
-            os.mkdir(f"trained_models/{model_save_name}")
+        if not os.path.exists("./trained_models"):
+            os.mkdir("./trained_models")
+        if not os.path.exists(f"./trained_models/{model_save_name}"):
+            os.mkdir(f"./trained_models/{model_save_name}")
 
-        torch.save(self.model, f"trained_models/{model_save_name}/{step}.pt")
+        torch.save(self.model, f"./trained_models/{model_save_name}/{step}.pt")
 
     @staticmethod
     def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, last_epoch=-1):
@@ -230,6 +232,9 @@ class Trainer:
 
 
 def main():
+    sentence_piece_model_path = "../../tokenizer/english_spm_lowercase.model"
+    source_data_path = "training_data/data/base_data_lowercase.txt"
+
     # vocab_size = 30000
     # n_encoder_layers = 8
     # d_model = 432
@@ -252,33 +257,40 @@ def main():
     learning_rate = 4e-5
     clipping_value = 1
 
-    model_type = "pytorch"        # custom or pytorch
-    model_name = f"{model_type}_transformer_w_gradient_clipping_{time.time()}"
+    model_type = "torch"        # custom or pytorch
+    # model_name = f"{model_type}_BERT_w_gradient_clipping_{time.time()}"
+    model_name = f"{model_type}_BERT_{time.time()}"
+
+    actual_step_start = 0  # 1720000
+    load_checkpoint = None   # f"trained_models/{model_type}_BERT_w_gradient_clipping_1679888363.7064824_GOOD/1720000.pt"
 
     if model_type == "custom":
-        model = CustomTransformerEncoderModel(device=device,
-                                              vocab_size=vocab_size,
-                                              n_encoder_layers=n_encoder_layers,
-                                              d_model=d_model,
-                                              d_ff_hidden=d_ff_hidden,
-                                              h=h,
-                                              max_input_size=max_input_size)
+        model = CustomBERT(device=device,
+                           vocab_size=vocab_size,
+                           n_encoder_layers=n_encoder_layers,
+                           d_model=d_model,
+                           d_ff_hidden=d_ff_hidden,
+                           h=h,
+                           max_input_size=max_input_size)
 
-    elif model_type == "pytorch":
-        model = PytorchTransformerEncoderModel(device=device,
-                                               vocab_size=vocab_size,
-                                               n_encoder_layers=n_encoder_layers,
-                                               d_model=d_model,
-                                               d_ff_hidden=d_ff_hidden,
-                                               h=h,
-                                               max_input_size=max_input_size)
+    elif model_type == "torch":
+        model = TorchBERT(device=device,
+                          vocab_size=vocab_size,
+                          n_encoder_layers=n_encoder_layers,
+                          d_model=d_model,
+                          d_ff_hidden=d_ff_hidden,
+                          h=h,
+                          max_input_size=max_input_size)
     else:
         raise NotImplementedError()
 
+    if load_checkpoint:
+        model.load_state_dict(torch.load(load_checkpoint).state_dict())
+
     trainer = Trainer(model=model,
                       device=device,
-                      sentence_piece_model_path="tokenizer/english_spm_lowercase.model",
-                      source_data_path="training_data/data/base_data_lowercase.txt",
+                      sentence_piece_model_path=sentence_piece_model_path,
+                      source_data_path=source_data_path,
                       batch_size=batch_size,
                       max_input_size=max_input_size,
                       vocab_size=vocab_size,
@@ -288,7 +300,8 @@ def main():
                       learning_rate=learning_rate,
                       clipping_value=clipping_value)
 
-    trainer.train(model_save_name=model_name)
+    trainer.train(model_save_name=model_name,
+                  actual_step_start=actual_step_start)
 
 
 main()
