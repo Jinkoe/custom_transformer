@@ -254,7 +254,7 @@ def main():
     n_warmup_steps = 50000
     n_training_steps = 3000000
     weight_decay = 0.05
-    learning_rate = 4e-5
+    learning_rate = 4e-6  #  4e-5
     clipping_value = 1
 
     model_type = "torch"        # custom or pytorch
